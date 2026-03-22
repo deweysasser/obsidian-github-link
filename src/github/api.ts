@@ -196,7 +196,7 @@ export class GitHubApi {
 		skipCache = false,
 	): Promise<PullReviewListResponse> {
 		const { response } = await this.queueRequest(
-			{ url: `${GitHubApi.baseApi}/repos/${org}/${repo}/pulls/${pr}/reviews` },
+			{ url: `${GitHubApi.baseApi}/repos/${org}/${repo}/pulls/${pr}/reviews?per_page=100` },
 			token,
 			skipCache,
 		);

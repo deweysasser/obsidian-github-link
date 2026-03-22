@@ -4,6 +4,7 @@ import { getSearchResultIssueStatus, IssueStatus } from "../../github/response";
 import { getPullRequest, getReviewsForPR } from "../../github/github";
 import { parseUrl, repoAPIToBrowserUrl } from "../../github/url-parse";
 import { setPRIcon } from "../../icon";
+import { logger } from "../../plugin";
 import { titleCase } from "../../util";
 import { CommonIssuePRColumns, UserCell, type ColumnsMap } from "./base";
 import type { TableResult } from "../types";
@@ -18,8 +19,8 @@ function getOrgRepoNumber(row: TableResult[number]): { org: string; repo: string
 		}
 	}
 	const parsed = parseUrl(row.html_url);
-	if (parsed?.org && parsed?.repo) {
-		return { org: parsed.org, repo: parsed.repo, number: row.number };
+	if (parsed?.org && parsed?.repo && parsed?.pr != null) {
+		return { org: parsed.org, repo: parsed.repo, number: parsed.pr };
 	}
 	return null;
 }
@@ -52,7 +53,8 @@ export const PullRequestColumns: ColumnsMap = {
 			try {
 				const pr = await getPullRequest(info.org, info.repo, info.number);
 				el.setText(`${pr.review_comments}`);
-			} catch {
+			} catch (err) {
+				logger.debug(`Failed to load review_comments: ${err}`);
 				el.setText("-");
 			}
 		},
@@ -67,12 +69,13 @@ export const PullRequestColumns: ColumnsMap = {
 			}
 			try {
 				const reviews = await getReviewsForPR(info.org, info.repo, info.number);
-				// Compute latest review state per reviewer
+				// Compute latest review state per reviewer, skipping comments and pending drafts
 				const latestByUser = new Map<string, string>();
 				for (const review of reviews) {
-					const user = review.user?.login ?? "unknown";
+					const user = review.user?.login;
+					if (!user) continue;
 					const state = review.state;
-					if (state && state !== "COMMENTED") {
+					if (state && state !== "COMMENTED" && state !== "PENDING") {
 						latestByUser.set(user, state);
 					}
 				}
@@ -90,7 +93,8 @@ export const PullRequestColumns: ColumnsMap = {
 					parts.push(`${count} ${label}`);
 				}
 				el.setText(parts.join(", "));
-			} catch {
+			} catch (err) {
+				logger.debug(`Failed to load reviews: ${err}`);
 				el.setText("-");
 			}
 		},
@@ -104,6 +108,7 @@ export const PullRequestColumns: ColumnsMap = {
 				return;
 			}
 			try {
+				// mergeable may be null if GitHub hasn't computed it yet
 				const pr = await getPullRequest(info.org, info.repo, info.number);
 				if (pr.mergeable === true) {
 					el.setText("No");
@@ -112,7 +117,8 @@ export const PullRequestColumns: ColumnsMap = {
 				} else {
 					el.setText("-");
 				}
-			} catch {
+			} catch (err) {
+				logger.debug(`Failed to load conflicts: ${err}`);
 				el.setText("-");
 			}
 		},
@@ -126,6 +132,7 @@ export const PullRequestColumns: ColumnsMap = {
 				return;
 			}
 			try {
+				// mergeable_state may be "unknown" if GitHub hasn't computed it yet
 				const pr = await getPullRequest(info.org, info.repo, info.number);
 				const state = pr.mergeable_state;
 				if (state) {
@@ -133,7 +140,8 @@ export const PullRequestColumns: ColumnsMap = {
 				} else {
 					el.setText("-");
 				}
-			} catch {
+			} catch (err) {
+				logger.debug(`Failed to load mergeable state: ${err}`);
 				el.setText("-");
 			}
 		},
@@ -153,7 +161,8 @@ export const PullRequestColumns: ColumnsMap = {
 				try {
 					const pr = await getPullRequest(info.org, info.repo, info.number);
 					reviewers = pr.requested_reviewers as UserResponse[] | undefined;
-				} catch {
+				} catch (err) {
+					logger.debug(`Failed to load requested_reviewers: ${err}`);
 					el.setText("-");
 					return;
 				}
@@ -164,7 +173,19 @@ export const PullRequestColumns: ColumnsMap = {
 			}
 			const wrapper = el.createDiv();
 			for (const reviewer of reviewers) {
-				UserCell(reviewer, wrapper);
+				if (!reviewer) continue;
+				if ("login" in reviewer) {
+					UserCell(reviewer, wrapper);
+				} else if ("slug" in reviewer) {
+					// Team reviewer
+					const team = reviewer as { slug: string; html_url?: string };
+					const anchor = wrapper.createEl("a", {
+						cls: "github-link-table-author",
+						href: team.html_url ?? "#",
+						attr: { target: "_blank" },
+					});
+					anchor.createSpan({ text: team.slug });
+				}
 			}
 		},
 	},
