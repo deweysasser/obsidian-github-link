@@ -99,4 +99,10 @@ export interface QueryParams {
 	 * Pull request target
 	 */
 	base?: string;
+
+	/**
+	 * Client-side sort specification. Comma-separated "column [asc|desc]" pairs.
+	 * Example: "created desc, number asc"
+	 */
+	clientSort?: string;
 }

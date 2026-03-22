@@ -24,6 +24,7 @@ export const PullRequestColumns: ColumnsMap = {
 	...CommonIssuePRColumns,
 	status: {
 		header: "Status",
+		sortValue: (row) => row.state ?? null,
 		cell: (row, el) => {
 			const wrapper = el.createDiv({ cls: "github-link-table-status" });
 			const status = getSearchResultIssueStatus(row);
@@ -34,6 +35,10 @@ export const PullRequestColumns: ColumnsMap = {
 	},
 	review_comments: {
 		header: "Review Comments",
+		sortValue: (row) => {
+			const count = (row as Record<string, unknown>).review_comments as number | undefined;
+			return count ?? null;
+		},
 		cell: async (row, el) => {
 			const count = (row as Record<string, unknown>).review_comments as number | undefined;
 			if (count != null) {
@@ -56,6 +61,17 @@ export const PullRequestColumns: ColumnsMap = {
 	},
 	reviews: {
 		header: "Reviews",
+		sortValue: (row) => {
+			const gql = (row as Record<string, unknown>)._graphql as PREnrichmentData | undefined;
+			if (!gql) return null;
+			const latestByUser = new Map<string, string>();
+			for (const review of gql.reviews) {
+				if (review.state !== "COMMENTED" && review.state !== "PENDING") {
+					latestByUser.set(review.login, review.state);
+				}
+			}
+			return latestByUser.size;
+		},
 		cell: async (row, el) => {
 			const gql = await getGraphQLData(row);
 			if (gql) {
@@ -119,6 +135,10 @@ export const PullRequestColumns: ColumnsMap = {
 	},
 	conflicts: {
 		header: "Conflicts",
+		sortValue: (row) => {
+			const gql = (row as Record<string, unknown>)._graphql as PREnrichmentData | undefined;
+			return gql?.mergeable ?? null;
+		},
 		cell: async (row, el) => {
 			const gql = await getGraphQLData(row);
 			if (gql) {
@@ -153,6 +173,10 @@ export const PullRequestColumns: ColumnsMap = {
 	},
 	mergeable: {
 		header: "Mergeable",
+		sortValue: (row) => {
+			const gql = (row as Record<string, unknown>)._graphql as PREnrichmentData | undefined;
+			return gql?.mergeStateStatus ?? null;
+		},
 		cell: async (row, el) => {
 			const gql = await getGraphQLData(row);
 			if (gql) {
@@ -184,6 +208,22 @@ export const PullRequestColumns: ColumnsMap = {
 	},
 	requested_reviewers: {
 		header: "Reviewers",
+		sortValue: (row) => {
+			const gql = (row as Record<string, unknown>)._graphql as PREnrichmentData | undefined;
+			if (gql) {
+				const seenLogins = new Set<string>();
+				for (const review of gql.reviews) {
+					seenLogins.add(review.login);
+				}
+				for (const rr of gql.reviewRequests) {
+					if (rr && "login" in rr) seenLogins.add(rr.login);
+				}
+				return seenLogins.size;
+			}
+			const rowData = row as Record<string, unknown>;
+			const reviewers = rowData.requested_reviewers as unknown[] | undefined;
+			return reviewers?.length ?? null;
+		},
 		cell: async (row, el) => {
 			const gql = await getGraphQLData(row);
 			if (gql) {

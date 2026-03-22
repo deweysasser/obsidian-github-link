@@ -10,6 +10,7 @@ export const IssueColumns: ColumnsMap = {
 	...CommonIssuePRColumns,
 	status: {
 		header: "Status",
+		sortValue: (row) => row.state ?? null,
 		cell: (row, el) => {
 			const wrapper = el.createDiv({ cls: "github-link-table-status" });
 			const status = getSearchResultIssueStatus(row);
