@@ -10,6 +10,7 @@ import type { MaybePaginated, PaginationMeta } from "../github/response";
 import { PluginSettings } from "../plugin";
 import { getProp, isEqual, titleCase } from "../util";
 import { ALL_COLUMNS, DEFAULT_COLUMNS } from "./column/defaults";
+import { enrichPRsWithGraphQL } from "../github/graphql-enrich";
 import type { QueryParams, TableResult } from "./types";
 import { OutputType, QueryType } from "./types";
 
@@ -38,6 +39,9 @@ export class GithubQuery {
 		if (forceUpdate || !isEqual(currentParams, newParams)) {
 			const result = await this.executeQuery(forceUpdate);
 			if (result) {
+				if (this.params.queryType === QueryType.PullRequest) {
+					enrichPRsWithGraphQL(result.response, this.params.columns ?? [], this.params.org);
+				}
 				this.setResult(result.response, result.meta);
 			}
 		}

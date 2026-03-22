@@ -2,28 +2,22 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { getSearchResultIssueStatus, IssueStatus } from "../../github/response";
 import { getPullRequest, getReviewsForPR } from "../../github/github";
-import { parseUrl, repoAPIToBrowserUrl } from "../../github/url-parse";
 import { setIcon } from "obsidian";
 import { setPRIcon } from "../../icon";
 import { logger } from "../../plugin";
 import { titleCase } from "../../util";
 import { CommonIssuePRColumns, UserCell, type ColumnsMap } from "./base";
 import type { TableResult } from "../types";
-import type { IssueListResponse, UserResponse } from "../../github/response";
+import type { UserResponse } from "../../github/response";
+import type { PREnrichmentData } from "../../github/graphql-types";
+import { getOrgRepoNumber } from "./utils";
 
-function getOrgRepoNumber(row: TableResult[number]): { org: string; repo: string; number: number } | null {
-	const repoUrl = (row as IssueListResponse[number]).repository_url;
-	if (repoUrl) {
-		const parsed = parseUrl(repoAPIToBrowserUrl(repoUrl));
-		if (parsed?.org && parsed?.repo) {
-			return { org: parsed.org, repo: parsed.repo, number: row.number };
-		}
+async function getGraphQLData(row: TableResult[number]): Promise<PREnrichmentData | undefined> {
+	const rowData = row as Record<string, unknown>;
+	if (rowData._graphqlPromise) {
+		await rowData._graphqlPromise;
 	}
-	const parsed = parseUrl(row.html_url);
-	if (parsed?.org && parsed?.repo && parsed?.pr != null) {
-		return { org: parsed.org, repo: parsed.repo, number: parsed.pr };
-	}
-	return null;
+	return rowData._graphql as PREnrichmentData | undefined;
 }
 
 export const PullRequestColumns: ColumnsMap = {
@@ -63,6 +57,30 @@ export const PullRequestColumns: ColumnsMap = {
 	reviews: {
 		header: "Reviews",
 		cell: async (row, el) => {
+			const gql = await getGraphQLData(row);
+			if (gql) {
+				const latestByUser = new Map<string, string>();
+				for (const review of gql.reviews) {
+					if (review.state !== "COMMENTED" && review.state !== "PENDING") {
+						latestByUser.set(review.login, review.state);
+					}
+				}
+				if (latestByUser.size === 0) {
+					el.setText("None");
+					return;
+				}
+				const counts: Record<string, number> = {};
+				for (const state of latestByUser.values()) {
+					counts[state] = (counts[state] ?? 0) + 1;
+				}
+				const parts: string[] = [];
+				for (const [state, count] of Object.entries(counts)) {
+					const label = titleCase(state.toLowerCase().replace(/_/g, " "));
+					parts.push(`${count} ${label}`);
+				}
+				el.setText(parts.join(", "));
+				return;
+			}
 			const info = getOrgRepoNumber(row);
 			if (!info) {
 				el.setText("-");
@@ -70,7 +88,6 @@ export const PullRequestColumns: ColumnsMap = {
 			}
 			try {
 				const reviews = await getReviewsForPR(info.org, info.repo, info.number);
-				// Compute latest review state per reviewer, skipping comments and pending drafts
 				const latestByUser = new Map<string, string>();
 				for (const review of reviews) {
 					const user = review.user?.login;
@@ -103,13 +120,23 @@ export const PullRequestColumns: ColumnsMap = {
 	conflicts: {
 		header: "Conflicts",
 		cell: async (row, el) => {
+			const gql = await getGraphQLData(row);
+			if (gql) {
+				if (gql.mergeable === "MERGEABLE") {
+					el.setText("No");
+				} else if (gql.mergeable === "CONFLICTING") {
+					el.setText("Yes");
+				} else {
+					el.setText("-");
+				}
+				return;
+			}
 			const info = getOrgRepoNumber(row);
 			if (!info) {
 				el.setText("-");
 				return;
 			}
 			try {
-				// mergeable may be null if GitHub hasn't computed it yet
 				const pr = await getPullRequest(info.org, info.repo, info.number);
 				if (pr.mergeable === true) {
 					el.setText("No");
@@ -127,13 +154,21 @@ export const PullRequestColumns: ColumnsMap = {
 	mergeable: {
 		header: "Mergeable",
 		cell: async (row, el) => {
+			const gql = await getGraphQLData(row);
+			if (gql) {
+				if (gql.mergeStateStatus) {
+					el.setText(titleCase(gql.mergeStateStatus.toLowerCase()));
+				} else {
+					el.setText("-");
+				}
+				return;
+			}
 			const info = getOrgRepoNumber(row);
 			if (!info) {
 				el.setText("-");
 				return;
 			}
 			try {
-				// mergeable_state may be "unknown" if GitHub hasn't computed it yet
 				const pr = await getPullRequest(info.org, info.repo, info.number);
 				const state = pr.mergeable_state;
 				if (state) {
@@ -150,6 +185,72 @@ export const PullRequestColumns: ColumnsMap = {
 	requested_reviewers: {
 		header: "Reviewers",
 		cell: async (row, el) => {
+			const gql = await getGraphQLData(row);
+			if (gql) {
+				// Build review state map from GraphQL reviews
+				const reviewStateByLogin = new Map<string, string>();
+				const seenLogins = new Set<string>();
+				const allUsers: Array<{ login: string; avatarUrl?: string; url?: string }> = [];
+
+				for (const review of gql.reviews) {
+					if (review.state !== "COMMENTED" && review.state !== "PENDING") {
+						reviewStateByLogin.set(review.login, review.state);
+					}
+					if (!seenLogins.has(review.login)) {
+						seenLogins.add(review.login);
+						allUsers.push({ login: review.login });
+					}
+				}
+
+				const teams: Array<{ slug: string; url: string }> = [];
+				for (const rr of gql.reviewRequests) {
+					if (!rr) continue;
+					if ("login" in rr) {
+						if (!seenLogins.has(rr.login)) {
+							seenLogins.add(rr.login);
+							allUsers.push({ login: rr.login, avatarUrl: rr.avatarUrl, url: rr.url });
+						}
+					} else if ("slug" in rr) {
+						teams.push({ slug: rr.slug, url: rr.url });
+					}
+				}
+
+				if (allUsers.length === 0 && teams.length === 0) {
+					el.setText("-");
+					return;
+				}
+
+				const wrapper = el.createDiv();
+				for (const user of allUsers) {
+					const reviewerWrapper = wrapper.createDiv({ cls: "github-link-table-author" });
+					UserCell(
+						{ login: user.login, html_url: user.url ?? `https://github.com/${user.login}`, avatar_url: user.avatarUrl ?? "" } as UserResponse,
+						reviewerWrapper,
+					);
+					const state = reviewStateByLogin.get(user.login);
+					if (state === "APPROVED") {
+						const icon = reviewerWrapper.createSpan({ cls: "github-link-review-icon" });
+						setIcon(icon, "lucide-check");
+						icon.style.color = "var(--color-green)";
+					} else if (state === "CHANGES_REQUESTED") {
+						const icon = reviewerWrapper.createSpan({ cls: "github-link-review-icon" });
+						setIcon(icon, "lucide-x");
+						icon.style.color = "var(--color-red)";
+					}
+				}
+				for (const team of teams) {
+					const teamWrapper = wrapper.createDiv({ cls: "github-link-table-author" });
+					const teamIcon = teamWrapper.createSpan({ cls: "github-link-review-icon" });
+					setIcon(teamIcon, "lucide-users");
+					const anchor = teamWrapper.createEl("a", {
+						href: team.url ?? "#",
+						attr: { target: "_blank" },
+					});
+					anchor.createSpan({ text: team.slug });
+				}
+				return;
+			}
+
 			const info = getOrgRepoNumber(row);
 			const rowData = row as Record<string, unknown>;
 			let reviewers = rowData.requested_reviewers as UserResponse[] | undefined;
@@ -167,7 +268,6 @@ export const PullRequestColumns: ColumnsMap = {
 					logger.debug(`Failed to load requested_reviewers: ${err}`);
 				}
 			}
-			// Collect all reviewers and their latest review state
 			const seenLogins = new Set<string>();
 			const allUsers: Array<{ user: UserResponse; state?: string }> = [];
 			if (reviewers) {
@@ -177,7 +277,6 @@ export const PullRequestColumns: ColumnsMap = {
 					allUsers.push({ user: r });
 				}
 			}
-			// Build latest review state per user from reviews endpoint
 			const reviewStateByLogin = new Map<string, string>();
 			if (info) {
 				try {

@@ -209,6 +209,28 @@ export class GitHubApi {
 		return allReviews;
 	}
 
+	public async graphqlRequest(query: string, token: string): Promise<unknown> {
+		const { resolve, reject, promise } = promiseWithResolvers<unknown>();
+		GitHubApi.q.push(() => {
+			return requestUrl({
+				url: "https://api.github.com/graphql",
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${token}`,
+				},
+				body: JSON.stringify({ query }),
+			})
+				.then((response) => {
+					resolve(response.json);
+				})
+				.catch((err) => {
+					reject(err);
+				});
+		});
+		return promise;
+	}
+
 	public async listCheckRunsForRef(
 		org: string,
 		repo: string,
