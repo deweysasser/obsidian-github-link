@@ -158,6 +158,10 @@ export class GithubQuery {
 	private renderFooter(params: QueryParams, meta: PaginationMeta | null, parent: HTMLElement): void {
 		const footer = parent.createDiv({ cls: "github-link-table-footer" });
 
+		if (this.result) {
+			footer.createSpan({ cls: "github-link-table-row-count", text: `${this.result.length} rows` });
+		}
+
 		// Add external link to footer if available
 		const externalLink = this.getExternalLink(params);
 		if (externalLink && PluginSettings.showExternalLink) {
