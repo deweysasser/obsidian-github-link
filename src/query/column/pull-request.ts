@@ -3,6 +3,7 @@
 import { getSearchResultIssueStatus, IssueStatus } from "../../github/response";
 import { getPullRequest, getReviewsForPR } from "../../github/github";
 import { parseUrl, repoAPIToBrowserUrl } from "../../github/url-parse";
+import { setIcon } from "obsidian";
 import { setPRIcon } from "../../icon";
 import { logger } from "../../plugin";
 import { titleCase } from "../../util";
@@ -166,24 +167,31 @@ export const PullRequestColumns: ColumnsMap = {
 					logger.debug(`Failed to load requested_reviewers: ${err}`);
 				}
 			}
-			// Also include reviewers who already submitted reviews
+			// Collect all reviewers and their latest review state
 			const seenLogins = new Set<string>();
-			const allUsers: UserResponse[] = [];
+			const allUsers: Array<{ user: UserResponse; state?: string }> = [];
 			if (reviewers) {
 				for (const r of reviewers) {
 					if (!r) continue;
 					seenLogins.add(r.login);
-					allUsers.push(r);
+					allUsers.push({ user: r });
 				}
 			}
+			// Build latest review state per user from reviews endpoint
+			const reviewStateByLogin = new Map<string, string>();
 			if (info) {
 				try {
 					const reviews = await getReviewsForPR(info.org, info.repo, info.number);
 					for (const review of reviews) {
 						const user = review.user;
-						if (user?.login && !seenLogins.has(user.login)) {
+						if (!user?.login) continue;
+						const state = review.state;
+						if (state && state !== "COMMENTED" && state !== "PENDING") {
+							reviewStateByLogin.set(user.login, state);
+						}
+						if (!seenLogins.has(user.login)) {
 							seenLogins.add(user.login);
-							allUsers.push(user as UserResponse);
+							allUsers.push({ user: user as UserResponse });
 						}
 					}
 				} catch (err) {
@@ -195,14 +203,28 @@ export const PullRequestColumns: ColumnsMap = {
 				return;
 			}
 			const wrapper = el.createDiv();
-			for (const user of allUsers) {
-				UserCell(user, wrapper);
+			for (const entry of allUsers) {
+				if (!entry.user) continue;
+				const reviewerWrapper = wrapper.createDiv({ cls: "github-link-table-author" });
+				UserCell(entry.user, reviewerWrapper);
+				const state = reviewStateByLogin.get(entry.user.login);
+				if (state === "APPROVED") {
+					const icon = reviewerWrapper.createSpan({ cls: "github-link-review-icon" });
+					setIcon(icon, "lucide-check");
+					icon.style.color = "var(--color-green)";
+				} else if (state === "CHANGES_REQUESTED") {
+					const icon = reviewerWrapper.createSpan({ cls: "github-link-review-icon" });
+					setIcon(icon, "lucide-x");
+					icon.style.color = "var(--color-red)";
+				}
 			}
 			if (teams) {
 				for (const team of teams) {
 					if (!team) continue;
-					const anchor = wrapper.createEl("a", {
-						cls: "github-link-table-author",
+					const teamWrapper = wrapper.createDiv({ cls: "github-link-table-author" });
+					const teamIcon = teamWrapper.createSpan({ cls: "github-link-review-icon" });
+					setIcon(teamIcon, "lucide-users");
+					const anchor = teamWrapper.createEl("a", {
 						href: team.html_url ?? "#",
 						attr: { target: "_blank" },
 					});
