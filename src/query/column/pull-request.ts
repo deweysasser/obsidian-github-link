@@ -38,9 +38,23 @@ export const PullRequestColumns: ColumnsMap = {
 	},
 	review_comments: {
 		header: "Review Comments",
-		cell: (row, el) => {
+		cell: async (row, el) => {
 			const count = (row as Record<string, unknown>).review_comments as number | undefined;
-			el.setText(count != null ? `${count}` : "-");
+			if (count != null) {
+				el.setText(`${count}`);
+				return;
+			}
+			const info = getOrgRepoNumber(row);
+			if (!info) {
+				el.setText("-");
+				return;
+			}
+			try {
+				const pr = await getPullRequest(info.org, info.repo, info.number);
+				el.setText(`${pr.review_comments}`);
+			} catch {
+				el.setText("-");
+			}
 		},
 	},
 	reviews: {
@@ -126,10 +140,24 @@ export const PullRequestColumns: ColumnsMap = {
 	},
 	requested_reviewers: {
 		header: "Requested Reviewers",
-		cell: (row, el) => {
-			const reviewers = (row as Record<string, unknown>).requested_reviewers as
+		cell: async (row, el) => {
+			let reviewers = (row as Record<string, unknown>).requested_reviewers as
 				| UserResponse[]
 				| undefined;
+			if (!reviewers) {
+				const info = getOrgRepoNumber(row);
+				if (!info) {
+					el.setText("-");
+					return;
+				}
+				try {
+					const pr = await getPullRequest(info.org, info.repo, info.number);
+					reviewers = pr.requested_reviewers as UserResponse[] | undefined;
+				} catch {
+					el.setText("-");
+					return;
+				}
+			}
 			if (!reviewers || reviewers.length === 0) {
 				el.setText("-");
 				return;
