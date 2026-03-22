@@ -147,19 +147,15 @@ export const PullRequestColumns: ColumnsMap = {
 		},
 	},
 	requested_reviewers: {
-		header: "Requested Reviewers",
+		header: "Reviewers",
 		cell: async (row, el) => {
+			const info = getOrgRepoNumber(row);
 			const rowData = row as Record<string, unknown>;
 			let reviewers = rowData.requested_reviewers as UserResponse[] | undefined;
 			let teams = rowData.requested_teams as
 				| Array<{ slug: string; html_url?: string }>
 				| undefined;
-			if (!reviewers && !teams) {
-				const info = getOrgRepoNumber(row);
-				if (!info) {
-					el.setText("-");
-					return;
-				}
+			if (!reviewers && !teams && info) {
 				try {
 					const pr = await getPullRequest(info.org, info.repo, info.number);
 					reviewers = pr.requested_reviewers as UserResponse[] | undefined;
@@ -168,24 +164,41 @@ export const PullRequestColumns: ColumnsMap = {
 						| undefined;
 				} catch (err) {
 					logger.debug(`Failed to load requested_reviewers: ${err}`);
-					el.setText("-");
-					return;
 				}
 			}
-			const hasReviewers = reviewers && reviewers.length > 0;
-			const hasTeams = teams && teams.length > 0;
-			if (!hasReviewers && !hasTeams) {
+			// Also include reviewers who already submitted reviews
+			const seenLogins = new Set<string>();
+			const allUsers: UserResponse[] = [];
+			if (reviewers) {
+				for (const r of reviewers) {
+					if (!r) continue;
+					seenLogins.add(r.login);
+					allUsers.push(r);
+				}
+			}
+			if (info) {
+				try {
+					const reviews = await getReviewsForPR(info.org, info.repo, info.number);
+					for (const review of reviews) {
+						const user = review.user;
+						if (user?.login && !seenLogins.has(user.login)) {
+							seenLogins.add(user.login);
+							allUsers.push(user as UserResponse);
+						}
+					}
+				} catch (err) {
+					logger.debug(`Failed to load reviews for reviewers column: ${err}`);
+				}
+			}
+			if (allUsers.length === 0 && (!teams || teams.length === 0)) {
 				el.setText("-");
 				return;
 			}
 			const wrapper = el.createDiv();
-			if (hasReviewers && reviewers) {
-				for (const reviewer of reviewers) {
-					if (!reviewer) continue;
-					UserCell(reviewer, wrapper);
-				}
+			for (const user of allUsers) {
+				UserCell(user, wrapper);
 			}
-			if (hasTeams && teams) {
+			if (teams) {
 				for (const team of teams) {
 					if (!team) continue;
 					const anchor = wrapper.createEl("a", {

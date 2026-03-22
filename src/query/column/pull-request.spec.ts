@@ -251,6 +251,7 @@ describe("PullRequestColumns", () => {
 
 	describe("requested_reviewers", () => {
 		test("renders user reviewers from row data", async () => {
+			mockedGetReviewsForPR.mockResolvedValue([] as unknown as PullReviewListResponse);
 			const cell = makeCell();
 			const row = makeRow({
 				requested_reviewers: [
@@ -264,6 +265,7 @@ describe("PullRequestColumns", () => {
 		});
 
 		test("renders team reviewers from requested_teams", async () => {
+			mockedGetReviewsForPR.mockResolvedValue([] as unknown as PullReviewListResponse);
 			const cell = makeCell();
 			const row = makeRow({
 				requested_reviewers: [],
@@ -279,6 +281,7 @@ describe("PullRequestColumns", () => {
 		});
 
 		test("renders both users and teams together", async () => {
+			mockedGetReviewsForPR.mockResolvedValue([] as unknown as PullReviewListResponse);
 			const cell = makeCell();
 			const row = makeRow({
 				requested_reviewers: [
@@ -293,11 +296,39 @@ describe("PullRequestColumns", () => {
 			expect(anchors.length).toEqual(2);
 		});
 
-		test("shows dash when no reviewers or teams", async () => {
+		test("shows dash when no reviewers or teams and no reviews", async () => {
+			mockedGetReviewsForPR.mockResolvedValue([] as unknown as PullReviewListResponse);
 			const cell = makeCell();
 			const row = makeRow({ requested_reviewers: [], requested_teams: [] });
 			await PullRequestColumns.requested_reviewers.cell(row, cell);
 			expect(cell.innerText).toEqual("-");
+		});
+
+		test("includes reviewers who already submitted reviews", async () => {
+			mockedGetReviewsForPR.mockResolvedValue([
+				{ user: { login: "gwu-actblue", html_url: "https://github.com/gwu-actblue" }, state: "APPROVED" },
+			] as unknown as PullReviewListResponse);
+			const cell = makeCell();
+			const row = makeRow({ requested_reviewers: [], requested_teams: [] });
+			await PullRequestColumns.requested_reviewers.cell(row, cell);
+			const anchor = cell.querySelector("a");
+			expect(anchor).toBeTruthy();
+			expect(anchor?.querySelector("span")?.innerText).toEqual("gwu-actblue");
+		});
+
+		test("deduplicates reviewers who are both pending and have reviewed", async () => {
+			mockedGetReviewsForPR.mockResolvedValue([
+				{ user: { login: "alice", html_url: "https://github.com/alice" }, state: "APPROVED" },
+			] as unknown as PullReviewListResponse);
+			const cell = makeCell();
+			const row = makeRow({
+				requested_reviewers: [
+					{ login: "alice", html_url: "https://github.com/alice" },
+				],
+			});
+			await PullRequestColumns.requested_reviewers.cell(row, cell);
+			const anchors = cell.querySelectorAll("a");
+			expect(anchors.length).toEqual(1);
 		});
 
 		test("fetches from PR detail when fields are missing", async () => {
@@ -307,6 +338,7 @@ describe("PullRequestColumns", () => {
 				],
 				requested_teams: [],
 			} as unknown as PullResponse);
+			mockedGetReviewsForPR.mockResolvedValue([] as unknown as PullReviewListResponse);
 			const cell = makeCell();
 			await PullRequestColumns.requested_reviewers.cell(makeRow(), cell);
 			expect(mockedGetPullRequest).toHaveBeenCalled();
