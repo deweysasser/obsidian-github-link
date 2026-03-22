@@ -17,6 +17,7 @@ import type {
 	PullListParams,
 	PullListResponse,
 	PullResponse,
+	PullReviewListResponse,
 	TimelineCrossReferencedEvent,
 } from "./response";
 
@@ -137,6 +138,15 @@ export function getPullRequestsForRepo(
 
 	setPageSize(listParams);
 	return api.listPullRequestsForRepo(org, repo, listParams, getToken(org), skipCache);
+}
+
+export function getReviewsForPR(
+	org: string,
+	repo: string,
+	pr: number,
+	skipCache = false,
+): Promise<PullReviewListResponse> {
+	return api.listReviewsForPR(org, repo, pr, getToken(org), skipCache);
 }
 
 export function listCheckRunsForRef(

@@ -18,6 +18,7 @@ import type {
 	PullListParams,
 	PullListResponse,
 	PullResponse,
+	PullReviewListResponse,
 } from "./response";
 import type { CacheEntry } from "./cache";
 
@@ -185,6 +186,21 @@ export class GitHubApi {
 		const url = this.addParams(`${GitHubApi.baseApi}/search/issues`, params);
 		const { meta, response } = await this.queueRequest({ url }, token, skipCache);
 		return { meta, response: response.json as IssueSearchResponse };
+	}
+
+	public async listReviewsForPR(
+		org: string,
+		repo: string,
+		pr: number,
+		token?: string,
+		skipCache = false,
+	): Promise<PullReviewListResponse> {
+		const { response } = await this.queueRequest(
+			{ url: `${GitHubApi.baseApi}/repos/${org}/${repo}/pulls/${pr}/reviews` },
+			token,
+			skipCache,
+		);
+		return response.json as PullReviewListResponse;
 	}
 
 	public async listCheckRunsForRef(

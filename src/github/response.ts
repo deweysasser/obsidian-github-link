@@ -42,6 +42,7 @@ export type RepoSearchResponse = RestEndpointMethodTypes["search"]["repos"]["res
 export type TimelineCrossReferencedEvent = OpenAPI.components["schemas"]["timeline-cross-referenced-event"];
 export type IssueTimelineResponse = RestEndpointMethodTypes["issues"]["listEventsForTimeline"]["response"]["data"];
 export type CheckRunListResponse = RestEndpointMethodTypes["checks"]["listForRef"]["response"]["data"];
+export type PullReviewListResponse = RestEndpointMethodTypes["pulls"]["listReviews"]["response"]["data"];
 
 export type UserResponse = IssueListResponse[number]["user"];
 
