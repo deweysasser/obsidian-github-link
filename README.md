@@ -35,6 +35,41 @@ This produces a table of results that refreshes upon opening the note.
 
 ![ExampleTable](doc/ExampleQueryResult.png)
 
+#### Available Columns
+
+Columns shared by issues and pull requests:
+
+| Column | Description |
+|--------|-------------|
+| `number` | Issue/PR number with link |
+| `title` | Title text |
+| `author` | Author with avatar |
+| `assignee` | Assigned user with avatar |
+| `repo` | Repository name with link |
+| `created` | Creation date |
+| `updated` | Last updated date |
+| `closed` | Close date |
+| `labels` | Labels with colors |
+| `status` | Open, Closed, Merged, etc. |
+
+Issue-only columns:
+
+| Column | Description |
+|--------|-------------|
+| `pr` | Linked pull request |
+
+Pull request-only columns:
+
+| Column | Description |
+|--------|-------------|
+| `reviews` | Review summary (e.g. "2 Approved, 1 Changes Requested") |
+| `requested_reviewers` | Users whose review has been requested |
+| `conflicts` | Whether the PR has merge conflicts (Yes/No) |
+| `mergeable` | Mergeable state (Clean, Blocked, Dirty, Unstable, Behind) |
+| `review_comments` | Number of review comments |
+
+Default columns are `number`, `title`, `author`, `created`, `status`. Any field name from the GitHub API response can also be used as a column.
+
 See the [documentation](https://github.com/nathonius/obsidian-github-link/wiki) for more info.
 
 ## Updates
