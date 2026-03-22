@@ -149,10 +149,12 @@ export const PullRequestColumns: ColumnsMap = {
 	requested_reviewers: {
 		header: "Requested Reviewers",
 		cell: async (row, el) => {
-			let reviewers = (row as Record<string, unknown>).requested_reviewers as
-				| UserResponse[]
+			const rowData = row as Record<string, unknown>;
+			let reviewers = rowData.requested_reviewers as UserResponse[] | undefined;
+			let teams = rowData.requested_teams as
+				| Array<{ slug: string; html_url?: string }>
 				| undefined;
-			if (!reviewers) {
+			if (!reviewers && !teams) {
 				const info = getOrgRepoNumber(row);
 				if (!info) {
 					el.setText("-");
@@ -161,24 +163,31 @@ export const PullRequestColumns: ColumnsMap = {
 				try {
 					const pr = await getPullRequest(info.org, info.repo, info.number);
 					reviewers = pr.requested_reviewers as UserResponse[] | undefined;
+					teams = pr.requested_teams as
+						| Array<{ slug: string; html_url?: string }>
+						| undefined;
 				} catch (err) {
 					logger.debug(`Failed to load requested_reviewers: ${err}`);
 					el.setText("-");
 					return;
 				}
 			}
-			if (!reviewers || reviewers.length === 0) {
+			const hasReviewers = reviewers && reviewers.length > 0;
+			const hasTeams = teams && teams.length > 0;
+			if (!hasReviewers && !hasTeams) {
 				el.setText("-");
 				return;
 			}
 			const wrapper = el.createDiv();
-			for (const reviewer of reviewers) {
-				if (!reviewer) continue;
-				if ("login" in reviewer) {
+			if (hasReviewers && reviewers) {
+				for (const reviewer of reviewers) {
+					if (!reviewer) continue;
 					UserCell(reviewer, wrapper);
-				} else if ("slug" in reviewer) {
-					// Team reviewer
-					const team = reviewer as { slug: string; html_url?: string };
+				}
+			}
+			if (hasTeams && teams) {
+				for (const team of teams) {
+					if (!team) continue;
 					const anchor = wrapper.createEl("a", {
 						cls: "github-link-table-author",
 						href: team.html_url ?? "#",
