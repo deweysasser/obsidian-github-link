@@ -195,12 +195,18 @@ export class GitHubApi {
 		token?: string,
 		skipCache = false,
 	): Promise<PullReviewListResponse> {
-		const { response } = await this.queueRequest(
-			{ url: `${GitHubApi.baseApi}/repos/${org}/${repo}/pulls/${pr}/reviews?per_page=100` },
-			token,
-			skipCache,
-		);
-		return response.json as PullReviewListResponse;
+		const baseUrl = `${GitHubApi.baseApi}/repos/${org}/${repo}/pulls/${pr}/reviews`;
+		let allReviews: PullReviewListResponse = [];
+		let url: string | undefined = `${baseUrl}?per_page=100`;
+
+		while (url) {
+			const { meta, response } = await this.queueRequest({ url }, token, skipCache);
+			const page = response.json as PullReviewListResponse;
+			allReviews = allReviews.concat(page);
+			url = meta.next ? `${meta.next.url}?per_page=${meta.next.per_page}&page=${meta.next.page}` : undefined;
+		}
+
+		return allReviews;
 	}
 
 	public async listCheckRunsForRef(
